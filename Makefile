@@ -3,6 +3,9 @@ OBJECT=$(SOURCES:.c=.o)
 
 STEP_HASH_LIMIT := 6
 
+#set -DVERBOSE in EXTRA_FLAGS to enable more verbosity
+
+
 
 %.o:%.c 
 	gcc -DSTEP_HASH_LIMIT=$(STEP_HASH_LIMIT) $(EXTRA_FLAGS) -mavx2 -I./include -c -O3 -g $^ -o $@
