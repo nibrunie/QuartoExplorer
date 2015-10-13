@@ -14,3 +14,13 @@ Until the board is full or a 4-piece pattern "Quarto" appears.
 
 
 This program has been developped to play with avx-2 and try to be as fast as possible.
+
+Requirements:
+-> Your processor must support avx2 instruction set (at least Intel's Haswell generation or equivalent)
+
+How To:
+-> build using "make"
+-> run using "./quarto_ia"
+-> an interactive menu will be displayed in the shell
+   -> e.g chose: "10" to launch exploration from the first position
+

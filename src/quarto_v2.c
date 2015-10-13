@@ -11,6 +11,11 @@
 #include <quarto_timer.h>
 #include <factoriel.h>
 
+
+#ifndef __AVX2__
+#error "Your processor must support AVX2 x86 extension"
+#endif
+
 #ifdef VERBOSE
 #define PRINTF printf
 #else
