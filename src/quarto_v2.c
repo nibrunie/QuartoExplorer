@@ -288,6 +288,8 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
 
   for (j = 0; j < 16; j++) {
     if (!(possible_indexes & (1 << j))) continue;
+
+    // considering <j-th> pawn
     uint16_t local_possible_indexes = possible_indexes ^ (1 << j);
     uint64_t new_pawn_state_mask = pawn_state_mask | (PAWN_ARRAY[j] << j);
     // status for the local totem
@@ -305,12 +307,14 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
 
     for (i = 0; i < 16; ++i) {
       if (!(possible_pos & (1 << i))) continue;
+      // considering <i-th> position 
+
       // remaining possible position
       uint16_t local_possible_pos = possible_pos ^ (1 << i);
       // local position used mask
       uint64_t new_pos_used_maskx4 = pos_used_maskx4 | (ONE_MASK_16x4 << i); 
 
-      container_pos_mask[container_id]   = new_pos_used_maskx4;
+      container_pos_mask[container_id] = new_pos_used_maskx4;
       // TODO can be factorized outside innermost loop
       container_pawn_state[container_id] = new_pawn_state_mask;
       container_id++;
@@ -346,11 +350,12 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
         list_pos_id = 0;
       }
     }
-      // must explore positions listed in list_pos_mask
-      unsigned k;
-      for (k = 0; k < list_pos_id; ++k) {
-        totem_status |= explore_play_from_position(list_pos_mask[k], new_pawn_state_mask, 1 - current_player, list_possible_pos[k], local_possible_indexes, step - 1); 
-      }
+
+    // must explore positions listed in list_pos_mask
+    unsigned k;
+    for (k = 0; k < list_pos_id; ++k) {
+      totem_status |= explore_play_from_position(list_pos_mask[k], new_pawn_state_mask, 1 - current_player, list_possible_pos[k], local_possible_indexes, step - 1); 
+    };
 
     // if it exist one totem which make the non current player win then 
     // he will pick it
@@ -388,7 +393,7 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
 
   if (step > STEP_HASH_LIMIT) {
     store_position_in_hash(pos_used_maskx4, pawn_state_mask, stored_status, current_player);
-    reduced_status_t check_status = 0;
+    //expanded_status_t check_status = 0;
     //int found_status = position_in_hash(pos_used_maskx4, pawn_state_mask, &check_status);
     //assert(found_status && (check_status == stored_status));
   }
