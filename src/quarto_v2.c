@@ -12,9 +12,6 @@
 #include <factoriel.h>
 
 
-#ifndef __AVX2__
-#error "Your processor must support AVX2 x86 extension"
-#endif
 
 #ifdef VERBOSE
 #define PRINTF printf
@@ -73,14 +70,37 @@ const uint64_t __attribute__((aligned(32))) WINMASK_U64[10*4] = {
     MASK_X4(WINMASK_9)
 };
 
-
+#ifdef __AVX2__
 void print_m256(__m256i v) {
   uint64_t __attribute__((aligned(32))) memo[4];
   _mm256_store_si256((__m256i*) memo, v);
   printf("%"PRIx64" %"PRIx64" %"PRIx64" %"PRIx64"\n", memo[3], memo[2], memo[1], memo[0]);
 }
+#endif /* __AVX2__ */
 
-static inline int container_has_quarto(__m256i pos_used_mask4x4, __m256i pawn_state_mask_x4) {
+static inline int position_is_quarto(uint64_t pos_used_mask_x4, uint64_t pawn_state_mask) {
+  uint64_t state_mask   = pawn_state_mask & pos_used_mask_x4;
+  uint64_t state_N_mask = pos_used_mask_x4 & (~pawn_state_mask);
+
+  unsigned i;
+  for (i = 0; i < 10; ++i) {
+    uint64_t winmask = WINMASK_U64[4*i];
+    __m64 wineq_mask    = _mm_cmpeq_pi16(_mm_cvtsi64_m64(state_mask & winmask),    _mm_cvtsi64_m64(winmask));
+    __m64 wineq_invmask = _mm_cmpeq_pi16(_mm_cvtsi64_m64(state_N_mask & winmask), _mm_cvtsi64_m64(winmask));
+    if (_mm_cvtm64_si64(wineq_mask) | _mm_cvtm64_si64(wineq_invmask)) return 1;
+  }
+
+  return 0;
+}
+
+#ifdef __AVX2__
+//static inline int container_has_quarto(__m256i pos_used_mask4x4, __m256i pawn_state_mask_x4) {
+static inline int container_has_quarto(uint64_t* container_pos_mask, uint64_t *container_pawn_state) {
+  __m256i pos_used_mask4x4, pawn_state_mask_x4;
+  
+   pos_used_mask4x4   = _mm256_load_si256((__m256i*) container_pos_mask);
+   pawn_state_mask_x4 = _mm256_load_si256((__m256i*) container_pawn_state);
+
   __m256i state_mask_x4 = _mm256_and_si256(pawn_state_mask_x4, pos_used_mask4x4); 
   // inverse mask
   __m256i state_N_mask_x4 = _mm256_andnot_si256(pawn_state_mask_x4, pos_used_mask4x4); 
@@ -103,21 +123,17 @@ static inline int container_has_quarto(__m256i pos_used_mask4x4, __m256i pawn_st
 
   return 0;
 }
-
-static inline int position_is_quarto(uint64_t pos_used_mask_x4, uint64_t pawn_state_mask) {
-  uint64_t state_mask   = pawn_state_mask & pos_used_mask_x4;
-  uint64_t state_N_mask = pos_used_mask_x4 & (~pawn_state_mask);
-
+#else 
+#define CONTAINER_SIZE 4 // __m256i
+static inline int container_has_quarto(uint64_t* container_pos_mask, uint64_t *container_pawn_state) {
   unsigned i;
-  for (i = 0; i < 10; ++i) {
-    uint64_t winmask = WINMASK_U64[4*i];
-    __m64 wineq_mask    = _mm_cmpeq_pi16(_mm_cvtsi64_m64(state_mask & winmask),    _mm_cvtsi64_m64(winmask));
-    __m64 wineq_invmask = _mm_cmpeq_pi16(_mm_cvtsi64_m64(state_N_mask & winmask), _mm_cvtsi64_m64(winmask));
-    if (_mm_cvtm64_si64(wineq_mask) | _mm_cvtm64_si64(wineq_invmask)) return 1;
-  }
-
+  for (i = 0; i < CONTAINER_SIZE; ++i) {
+    if (position_is_quarto(container_pos_mask[i], container_pawn_state[i])) return 1;
+  };
   return 0;
 }
+#endif /* __AVX2__ */
+
 
 
 #define PAWN(n) ((((uint64_t) n & 0x1) << 0) | \
@@ -296,6 +312,7 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
     uint8_t totem_status = 0;
     // index in the 4-chunk container
     unsigned container_id = 0;
+    // aligned container to be loaded in __m256i
     uint64_t __attribute__((aligned(32))) container_pos_mask[4] = {0};
     uint64_t __attribute__((aligned(32))) container_pawn_state[4] = {0};
     
@@ -325,7 +342,8 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
 
       if (container_id == 4) {
         container_id = 0;
-        if (container_has_quarto(_mm256_load_si256((__m256i*) container_pos_mask), _mm256_load_si256((__m256i*) container_pawn_state))) {
+        //if (container_has_quarto(_mm256_load_si256((__m256i*) container_pos_mask), _mm256_load_si256((__m256i*) container_pawn_state))) {
+        if (container_has_quarto(container_pos_mask, container_pawn_state)) {
             list_pos_id = 0;
             PRINTF("container has quarto\n");
             // at least one wining position has been found for this totem
@@ -343,7 +361,10 @@ expanded_status_t explore_play_from_position(uint64_t pos_used_maskx4, uint64_t 
     if (container_id != 0) { 
       // some positions remains in container
       // to be tested for quarto condition
-      if (container_has_quarto(_mm256_load_si256((__m256i*) container_pos_mask), _mm256_load_si256((__m256i*) container_pawn_state))) {
+      // some of the conditions may already have been tested (remaning from previous)
+      // but it is too long to exclude them, but to test them again
+      //if (container_has_quarto(_mm256_load_si256((__m256i*) container_pos_mask), _mm256_load_si256((__m256i*) container_pawn_state))) {
+      if (container_has_quarto(container_pos_mask, container_pawn_state)) {
             PRINTF("container has quarto\n");
         // at least one wining position has been found for this totem
         totem_status = (current_player ? S_EXP_WIN1 : S_EXP_WIN0);
